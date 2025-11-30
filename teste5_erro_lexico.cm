@@ -1,0 +1,11 @@
+/* Teste 5: ERRO LÉXICO - Caractere inválido */
+
+int main(void) {
+    int x;
+    int y;
+    
+    x = 10;
+    y = x @ 5;  /* Erro: @ não é um operador válido */
+    
+    return y;
+}

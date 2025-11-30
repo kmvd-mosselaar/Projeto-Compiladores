@@ -1,0 +1,36 @@
+/* Teste 3: Busca em array */
+
+int buscar(int arr[], int tamanho, int valor) {
+    int i;
+    int encontrado;
+    
+    i = 0;
+    encontrado = 0;
+    
+    while (i < tamanho) {
+        if (arr[i] == valor) {
+            encontrado = 1;
+        }
+        i = i + 1;
+    }
+    
+    return encontrado;
+}
+
+int main(void) {
+    int numeros[10];
+    int i;
+    int achou;
+    
+    /* Preencher array com valores de 0 a 9 */
+    i = 0;
+    while (i < 10) {
+        numeros[i] = i;
+        i = i + 1;
+    }
+    
+    /* Buscar o valor 7 */
+    achou = buscar(numeros, 10, 7);
+    
+    return achou;
+}
