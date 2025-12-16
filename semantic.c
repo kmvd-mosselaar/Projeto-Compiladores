@@ -1,4 +1,4 @@
-/* semantic.c - Implementação do Analisador Semântico */
+/* semantic.c - Implementação do Analisador Semântico CORRIGIDO */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,18 +6,13 @@
 #include "semantic.h"
 
 /* Protótipos internos */
-static void analyze_program(SemanticAnalyzer *a, ASTNode *node);
+static void analyze_node(SemanticAnalyzer *a, ASTNode *node);
 static void analyze_var_decl(SemanticAnalyzer *a, ASTNode *node);
 static void analyze_fun_decl(SemanticAnalyzer *a, ASTNode *node);
+static void analyze_param(SemanticAnalyzer *a, ASTNode *node);
 static void analyze_compound_stmt(SemanticAnalyzer *a, ASTNode *node);
-static void analyze_if_stmt(SemanticAnalyzer *a, ASTNode *node);
-static void analyze_while_stmt(SemanticAnalyzer *a, ASTNode *node);
-static void analyze_return_stmt(SemanticAnalyzer *a, ASTNode *node);
-static void analyze_assign(SemanticAnalyzer *a, ASTNode *node);
-static DataType analyze_expr(SemanticAnalyzer *a, ASTNode *node);
-static DataType analyze_var(SemanticAnalyzer *a, ASTNode *node);
-static DataType analyze_call(SemanticAnalyzer *a, ASTNode *node);
-static DataType analyze_op(SemanticAnalyzer *a, ASTNode *node);
+static void analyze_statement(SemanticAnalyzer *a, ASTNode *node);
+static DataType analyze_expression(SemanticAnalyzer *a, ASTNode *node);
 static void semantic_error(const char *msg, int lineno);
 
 /* Criação do analisador semântico */
@@ -28,9 +23,10 @@ SemanticAnalyzer* semantic_create(void) {
         exit(1);
     }
     
-    analyzer->symtab = symtab_create();
+    analyzer->symtab = create_symbol_table();
     analyzer->has_errors = 0;
     strcpy(analyzer->current_function, "");
+    analyzer->current_function_type = TYPE_VOID;
     
     return analyzer;
 }
@@ -39,7 +35,7 @@ SemanticAnalyzer* semantic_create(void) {
 void semantic_destroy(SemanticAnalyzer *analyzer) {
     if (analyzer) {
         if (analyzer->symtab) {
-            symtab_destroy(analyzer->symtab);
+            free_symbol_table(analyzer->symtab);
         }
         free(analyzer);
     }
@@ -51,11 +47,18 @@ int semantic_analyze(SemanticAnalyzer *analyzer, ASTNode *root) {
         return 0;
     }
     
-    analyze_program(analyzer, root);
+    /* Processa todas as declarações do programa */
+    if (root->type == NODE_PROGRAM) {
+        ASTNode *decl = root->sibling;
+        while (decl != NULL) {
+            analyze_node(analyzer, decl);
+            decl = decl->sibling;
+        }
+    }
     
     /* Verifica se main() existe */
-    Symbol *main_sym = symtab_lookup(analyzer->symtab, "main");
-    if (!main_sym || main_sym->kind != SYMBOL_FUNCTION) {
+    Symbol *main_sym = lookup_symbol(analyzer->symtab, "main");
+    if (!main_sym || main_sym->kind != SYM_FUNCTION) {
         fprintf(stderr, "ERRO SEMANTICO: funcao 'main' nao declarada\n");
         analyzer->has_errors = 1;
     }
@@ -66,7 +69,7 @@ int semantic_analyze(SemanticAnalyzer *analyzer, ASTNode *root) {
 /* Impressão da tabela de símbolos */
 void semantic_print_table(SemanticAnalyzer *analyzer) {
     if (analyzer && analyzer->symtab) {
-        symtab_print(analyzer->symtab);
+        print_complete_symbol_table(analyzer->symtab, NULL);
     }
 }
 
@@ -75,282 +78,310 @@ static void semantic_error(const char *msg, int lineno) {
     fprintf(stderr, "ERRO SEMANTICO: %s - LINHA: %d\n", msg, lineno);
 }
 
-/* Análise do programa */
-static void analyze_program(SemanticAnalyzer *a, ASTNode *node) {
-    if (node->kind != NODE_PROGRAM) {
-        return;
-    }
+/* Análise de nó genérico */
+static void analyze_node(SemanticAnalyzer *a, ASTNode *node) {
+    if (!node) return;
     
-    ASTNode *child = node->child;
-    while (child) {
-        if (child->kind == NODE_VAR_DECL) {
-            analyze_var_decl(a, child);
-        } else if (child->kind == NODE_FUN_DECL) {
-            analyze_fun_decl(a, child);
-        }
-        child = child->sibling;
+    switch(node->type) {
+        case NODE_VAR_DECL:
+            analyze_var_decl(a, node);
+            break;
+        case NODE_FUN_DECL:
+            analyze_fun_decl(a, node);
+            break;
+        case NODE_COMPOUND_STMT:
+            analyze_compound_stmt(a, node);
+            break;
+        case NODE_IF_STMT:
+        case NODE_WHILE_STMT:
+        case NODE_RETURN_STMT:
+        case NODE_EXPR_STMT:
+            analyze_statement(a, node);
+            break;
+        case NODE_ASSIGN:
+        case NODE_BINARY_OP:
+        case NODE_VAR:
+        case NODE_CALL:
+        case NODE_CONST:
+            analyze_expression(a, node);
+            break;
+        default:
+            break;
     }
 }
 
 /* Análise de declaração de variável */
 static void analyze_var_decl(SemanticAnalyzer *a, ASTNode *node) {
-    if (node->type == TYPE_VOID) {
+    if (node->data.var_decl.data_type == TYPE_VOID) {
         char msg[256];
-        snprintf(msg, 256, "variavel '%s' nao pode ser void", node->name);
-        semantic_error(msg, node->lineno);
+        snprintf(msg, 256, "variavel '%s' nao pode ser void", node->data.var_decl.name);
+        semantic_error(msg, node->line_num);
         a->has_errors = 1;
         return;
     }
     
-    SymbolKind kind = node->is_array ? SYMBOL_ARRAY : SYMBOL_VARIABLE;
-    
-    if (!symtab_insert(a->symtab, node->name, node->type, kind, 
-                       node->array_size, node->lineno)) {
+    Symbol *existing = lookup_symbol_current_scope(a->symtab, node->data.var_decl.name);
+    if (existing) {
         char msg[256];
-        snprintf(msg, 256, "identificador '%s' ja declarado", node->name);
-        semantic_error(msg, node->lineno);
+        snprintf(msg, 256, "identificador '%s' ja declarado na linha %d", 
+                 node->data.var_decl.name, existing->line_num);
+        semantic_error(msg, node->line_num);
         a->has_errors = 1;
+        return;
     }
+    
+    insert_symbol(a->symtab, 
+                  node->data.var_decl.name,
+                  node->data.var_decl.data_type,
+                  SYM_VARIABLE,
+                  node->data.var_decl.is_array,
+                  node->data.var_decl.array_size,
+                  node->line_num);
 }
 
 /* Análise de declaração de função */
 static void analyze_fun_decl(SemanticAnalyzer *a, ASTNode *node) {
-    strcpy(a->current_function, node->name);
+    strcpy(a->current_function, node->data.fun_decl.name);
+    a->current_function_type = node->data.fun_decl.return_type;
     
-    /* Insere função na tabela global */
-    if (!symtab_insert(a->symtab, node->name, node->type, 
-                       SYMBOL_FUNCTION, 0, node->lineno)) {
+    /* Verifica se função já existe */
+    Symbol *existing = lookup_symbol(a->symtab, node->data.fun_decl.name);
+    if (existing) {
         char msg[256];
-        snprintf(msg, 256, "funcao '%s' ja declarada", node->name);
-        semantic_error(msg, node->lineno);
+        snprintf(msg, 256, "funcao '%s' ja declarada na linha %d", 
+                 node->data.fun_decl.name, existing->line_num);
+        semantic_error(msg, node->line_num);
         a->has_errors = 1;
         return;
     }
     
-    /* Entra no escopo da função */
-    symtab_enter_scope(a->symtab, node->name);
+    /* Insere função na tabela global */
+    insert_symbol(a->symtab, 
+                  node->data.fun_decl.name,
+                  node->data.fun_decl.return_type,
+                  SYM_FUNCTION,
+                  0, 0,
+                  node->line_num);
     
-    /* Insere parâmetros */
-    ASTNode *param = node->child;
-    while (param && param->kind == NODE_PARAM) {
-        SymbolKind kind = param->is_array ? SYMBOL_ARRAY : SYMBOL_PARAM;
-        if (!symtab_insert(a->symtab, param->name, param->type, 
-                          kind, 0, param->lineno)) {
-            char msg[256];
-            snprintf(msg, 256, "parametro '%s' duplicado", param->name);
-            semantic_error(msg, param->lineno);
-            a->has_errors = 1;
-        }
+    /* Entra no escopo da função */
+    enter_scope(a->symtab, node->data.fun_decl.name);
+    
+    /* Analisa parâmetros */
+    ASTNode *param = node->data.fun_decl.params;
+    while (param) {
+        analyze_param(a, param);
         param = param->sibling;
     }
     
     /* Analisa corpo da função */
-    ASTNode *body = node->child;
-    while (body && body->kind == NODE_PARAM) {
-        body = body->sibling;
-    }
-    
-    if (body && body->kind == NODE_COMPOUND_STMT) {
-        analyze_compound_stmt(a, body);
+    if (node->data.fun_decl.body) {
+        analyze_compound_stmt(a, node->data.fun_decl.body);
     }
     
     /* Sai do escopo */
-    symtab_exit_scope(a->symtab);
+    exit_scope(a->symtab);
+}
+
+/* Análise de parâmetro */
+static void analyze_param(SemanticAnalyzer *a, ASTNode *node) {
+    if (node->type != NODE_PARAM) return;
+    
+    if (node->data.param.data_type == TYPE_VOID) {
+        char msg[256];
+        snprintf(msg, 256, "parametro '%s' nao pode ser void", node->data.param.name);
+        semantic_error(msg, node->line_num);
+        a->has_errors = 1;
+        return;
+    }
+    
+    Symbol *existing = lookup_symbol_current_scope(a->symtab, node->data.param.name);
+    if (existing) {
+        char msg[256];
+        snprintf(msg, 256, "parametro '%s' duplicado", node->data.param.name);
+        semantic_error(msg, node->line_num);
+        a->has_errors = 1;
+        return;
+    }
+    
+    insert_symbol(a->symtab,
+                  node->data.param.name,
+                  node->data.param.data_type,
+                  SYM_PARAMETER,
+                  node->data.param.is_array,
+                  0,
+                  node->line_num);
 }
 
 /* Análise de bloco composto */
 static void analyze_compound_stmt(SemanticAnalyzer *a, ASTNode *node) {
     /* Processa declarações locais */
-    ASTNode *child = node->child;
-    while (child) {
-        if (child->kind == NODE_VAR_DECL) {
-            analyze_var_decl(a, child);
-        } else {
-            break; /* Acabaram as declarações */
-        }
-        child = child->sibling;
+    for (int i = 0; i < node->data.compound.num_local_decls; i++) {
+        analyze_var_decl(a, node->data.compound.local_decls[i]);
     }
     
     /* Processa statements */
-    while (child) {
-        switch (child->kind) {
-            case NODE_IF_STMT:
-                analyze_if_stmt(a, child);
-                break;
-            case NODE_WHILE_STMT:
-                analyze_while_stmt(a, child);
-                break;
-            case NODE_RETURN_STMT:
-                analyze_return_stmt(a, child);
-                break;
-            case NODE_ASSIGN:
-                analyze_assign(a, child);
-                break;
-            case NODE_CALL:
-                analyze_call(a, child);
-                break;
-            case NODE_COMPOUND_STMT:
-                analyze_compound_stmt(a, child);
-                break;
-            default:
-                if (child->kind == NODE_BINARY_OP || 
-                    child->kind == NODE_VAR || 
-                    child->kind == NODE_CONST) {
-                    analyze_expr(a, child);
+    for (int i = 0; i < node->data.compound.num_statements; i++) {
+        analyze_statement(a, node->data.compound.statements[i]);
+    }
+}
+
+/* Análise de statement */
+static void analyze_statement(SemanticAnalyzer *a, ASTNode *node) {
+    if (!node) return;
+    
+    switch(node->type) {
+        case NODE_COMPOUND_STMT:
+            analyze_compound_stmt(a, node);
+            break;
+            
+        case NODE_IF_STMT:
+            /* Analisa condição */
+            analyze_expression(a, node->data.if_stmt.condition);
+            /* Analisa then */
+            analyze_statement(a, node->data.if_stmt.then_stmt);
+            /* Analisa else (se existir) */
+            if (node->data.if_stmt.else_stmt) {
+                analyze_statement(a, node->data.if_stmt.else_stmt);
+            }
+            break;
+            
+        case NODE_WHILE_STMT:
+            /* Analisa condição */
+            analyze_expression(a, node->data.while_stmt.condition);
+            /* Analisa corpo */
+            analyze_statement(a, node->data.while_stmt.body);
+            break;
+            
+        case NODE_RETURN_STMT:
+            if (node->data.return_stmt.expr) {
+                DataType expr_type = analyze_expression(a, node->data.return_stmt.expr);
+                if (a->current_function_type == TYPE_VOID && expr_type != TYPE_VOID) {
+                    char msg[256];
+                    snprintf(msg, 256, "funcao void nao pode retornar valor");
+                    semantic_error(msg, node->line_num);
+                    a->has_errors = 1;
                 }
-                break;
-        }
-        child = child->sibling;
-    }
-}
-
-/* Análise de if */
-static void analyze_if_stmt(SemanticAnalyzer *a, ASTNode *node) {
-    /* Analisa condição */
-    if (node->child) {
-        analyze_expr(a, node->child);
-    }
-    
-    /* Analisa then */
-    ASTNode *then_stmt = node->child ? node->child->sibling : NULL;
-    if (then_stmt) {
-        if (then_stmt->kind == NODE_COMPOUND_STMT) {
-            analyze_compound_stmt(a, then_stmt);
-        }
-    }
-    
-    /* Analisa else (se existir) */
-    ASTNode *else_stmt = then_stmt ? then_stmt->sibling : NULL;
-    if (else_stmt) {
-        if (else_stmt->kind == NODE_COMPOUND_STMT) {
-            analyze_compound_stmt(a, else_stmt);
-        }
-    }
-}
-
-/* Análise de while */
-static void analyze_while_stmt(SemanticAnalyzer *a, ASTNode *node) {
-    /* Analisa condição */
-    if (node->child) {
-        analyze_expr(a, node->child);
-    }
-    
-    /* Analisa corpo */
-    ASTNode *body = node->child ? node->child->sibling : NULL;
-    if (body && body->kind == NODE_COMPOUND_STMT) {
-        analyze_compound_stmt(a, body);
-    }
-}
-
-/* Análise de return */
-static void analyze_return_stmt(SemanticAnalyzer *a, ASTNode *node) {
-    if (node->child) {
-        analyze_expr(a, node->child);
-    }
-}
-
-/* Análise de atribuição */
-static void analyze_assign(SemanticAnalyzer *a, ASTNode *node) {
-    DataType var_type = analyze_var(a, node->child);
-    
-    ASTNode *expr = node->child ? node->child->sibling : NULL;
-    if (expr) {
-        DataType expr_type = analyze_expr(a, expr);
-        
-        if (var_type != TYPE_INT && var_type != TYPE_VOID) {
-            semantic_error("atribuicao invalida", node->lineno);
-            a->has_errors = 1;
-        }
+            } else {
+                if (a->current_function_type != TYPE_VOID) {
+                    char msg[256];
+                    snprintf(msg, 256, "funcao deve retornar um valor");
+                    semantic_error(msg, node->line_num);
+                    a->has_errors = 1;
+                }
+            }
+            break;
+            
+        case NODE_EXPR_STMT:
+            if (node->data.expr_stmt.expr) {
+                analyze_expression(a, node->data.expr_stmt.expr);
+            }
+            break;
+            
+        default:
+            break;
     }
 }
 
 /* Análise de expressão */
-static DataType analyze_expr(SemanticAnalyzer *a, ASTNode *node) {
-    if (!node) {
-        return TYPE_VOID;
-    }
+static DataType analyze_expression(SemanticAnalyzer *a, ASTNode *node) {
+    if (!node) return TYPE_VOID;
     
-    switch (node->kind) {
-        case NODE_VAR:
-            return analyze_var(a, node);
-        case NODE_CALL:
-            return analyze_call(a, node);
-        case NODE_BINARY_OP:
-            return analyze_op(a, node);
+    switch(node->type) {
+        case NODE_ASSIGN: {
+            DataType var_type = analyze_expression(a, node->data.assign.var);
+            DataType expr_type = analyze_expression(a, node->data.assign.expr);
+            
+            if (var_type == TYPE_VOID || expr_type == TYPE_VOID) {
+                semantic_error("atribuicao invalida com tipo void", node->line_num);
+                a->has_errors = 1;
+            }
+            return var_type;
+        }
+        
+        case NODE_BINARY_OP: {
+            analyze_expression(a, node->data.binary_op.left);
+            analyze_expression(a, node->data.binary_op.right);
+            return TYPE_INT;
+        }
+        
+        case NODE_VAR: {
+            Symbol *sym = lookup_symbol(a->symtab, node->data.var.name);
+            if (!sym) {
+                char msg[256];
+                snprintf(msg, 256, "identificador '%s' nao declarado", node->data.var.name);
+                semantic_error(msg, node->line_num);
+                a->has_errors = 1;
+                return TYPE_VOID;
+            }
+            
+            /* Se tem índice, verifica se é array */
+            if (node->data.var.index) {
+                if (!sym->is_array) {
+                    char msg[256];
+                    snprintf(msg, 256, "'%s' nao e um array", node->data.var.name);
+                    semantic_error(msg, node->line_num);
+                    a->has_errors = 1;
+                }
+                analyze_expression(a, node->data.var.index);
+            } else {
+                /* Variável simples não pode ser array sem índice */
+                if (sym->is_array && sym->kind == SYM_VARIABLE) {
+                    char msg[256];
+                    snprintf(msg, 256, "array '%s' usado sem indice", node->data.var.name);
+                    semantic_error(msg, node->line_num);
+                    a->has_errors = 1;
+                }
+            }
+            
+            return sym->type;
+        }
+        
+        case NODE_CALL: {
+            Symbol *sym = lookup_symbol(a->symtab, node->data.call.name);
+            
+            /* Funções built-in */
+            if (strcmp(node->data.call.name, "input") == 0) {
+                return TYPE_INT;
+            }
+            if (strcmp(node->data.call.name, "output") == 0) {
+                if (node->data.call.num_args != 1) {
+                    semantic_error("output espera 1 argumento", node->line_num);
+                    a->has_errors = 1;
+                }
+                for (int i = 0; i < node->data.call.num_args; i++) {
+                    analyze_expression(a, node->data.call.args[i]);
+                }
+                return TYPE_VOID;
+            }
+            
+            if (!sym) {
+                char msg[256];
+                snprintf(msg, 256, "funcao '%s' nao declarada", node->data.call.name);
+                semantic_error(msg, node->line_num);
+                a->has_errors = 1;
+                return TYPE_VOID;
+            }
+            
+            if (sym->kind != SYM_FUNCTION) {
+                char msg[256];
+                snprintf(msg, 256, "'%s' nao e uma funcao", node->data.call.name);
+                semantic_error(msg, node->line_num);
+                a->has_errors = 1;
+                return TYPE_VOID;
+            }
+            
+            /* Analisa argumentos */
+            for (int i = 0; i < node->data.call.num_args; i++) {
+                analyze_expression(a, node->data.call.args[i]);
+            }
+            
+            return sym->type;
+        }
+        
         case NODE_CONST:
             return TYPE_INT;
+            
         default:
             return TYPE_VOID;
     }
-}
-
-/* Análise de variável */
-static DataType analyze_var(SemanticAnalyzer *a, ASTNode *node) {
-    Symbol *sym = symtab_lookup(a->symtab, node->name);
-    if (!sym) {
-        char msg[256];
-        snprintf(msg, 256, "identificador '%s' nao declarado", node->name);
-        semantic_error(msg, node->lineno);
-        a->has_errors = 1;
-        return TYPE_VOID;
-    }
-    
-    /* Se tem índice, é acesso a array */
-    if (node->child) {
-        analyze_expr(a, node->child);
-        if (sym->kind != SYMBOL_ARRAY) {
-            char msg[256];
-            snprintf(msg, 256, "'%s' nao e um array", node->name);
-            semantic_error(msg, node->lineno);
-            a->has_errors = 1;
-        }
-        return TYPE_INT;
-    }
-    
-    return sym->type;
-}
-
-/* Análise de chamada de função */
-static DataType analyze_call(SemanticAnalyzer *a, ASTNode *node) {
-    Symbol *sym = symtab_lookup(a->symtab, node->name);
-    if (!sym) {
-        char msg[256];
-        snprintf(msg, 256, "funcao '%s' nao declarada", node->name);
-        semantic_error(msg, node->lineno);
-        a->has_errors = 1;
-        return TYPE_VOID;
-    }
-    
-    if (sym->kind != SYMBOL_FUNCTION) {
-        char msg[256];
-        snprintf(msg, 256, "'%s' nao e uma funcao", node->name);
-        semantic_error(msg, node->lineno);
-        a->has_errors = 1;
-        return TYPE_VOID;
-    }
-    
-    /* Analisa argumentos */
-    ASTNode *arg = node->child;
-    while (arg) {
-        analyze_expr(a, arg);
-        arg = arg->sibling;
-    }
-    
-    /* Funções built-in */
-    if (strcmp(node->name, "input") == 0) {
-        return TYPE_INT;
-    }
-    
-    return TYPE_VOID;
-}
-
-/* Análise de operação binária */
-static DataType analyze_op(SemanticAnalyzer *a, ASTNode *node) {
-    if (node->child) {
-        analyze_expr(a, node->child);
-    }
-    if (node->child && node->child->sibling) {
-        analyze_expr(a, node->child->sibling);
-    }
-    return TYPE_INT;
 }

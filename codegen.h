@@ -1,5 +1,4 @@
-/* codegen.h - Gerador de Código Intermediário */
-
+/* codegen.h - Gerador de Código Intermediário Integrado */
 #ifndef CODEGEN_H
 #define CODEGEN_H
 

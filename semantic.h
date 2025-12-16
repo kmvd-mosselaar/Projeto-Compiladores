@@ -1,5 +1,4 @@
-/* semantic.h - Analisador Semântico */
-
+/* semantic.h - Analisador Semântico Integrado */
 #ifndef SEMANTIC_H
 #define SEMANTIC_H
 
@@ -11,6 +10,7 @@ typedef struct {
     SymbolTable *symtab;
     int has_errors;
     char current_function[256];
+    DataType current_function_type;
 } SemanticAnalyzer;
 
 /* Inicialização e finalização */
