@@ -1,0 +1,11 @@
+int soma(int a, int b)
+{
+    a = a + b;
+}
+
+int main(void)
+{
+    int x;
+    x = soma(5,4);
+    return 0;
+}
