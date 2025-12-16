@@ -1,0 +1,11 @@
+/* Sucesso: uso correto de array */
+int main(void) {
+    int vetor[10];
+    int i;
+    
+    i = 0;
+    vetor[i] = 100;
+    vetor[5] = 200;
+    
+    return vetor[5];
+}

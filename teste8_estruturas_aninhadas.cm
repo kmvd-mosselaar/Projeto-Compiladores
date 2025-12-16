@@ -1,0 +1,57 @@
+/* Teste 8: Estruturas de controle aninhadas */
+
+int classificar(int nota) {
+    int resultado;
+    
+    if (nota >= 90) {
+        resultado = 4;  /* A */
+    } else {
+        if (nota >= 70) {
+            resultado = 3;  /* B */
+        } else {
+            if (nota >= 50) {
+                resultado = 2;  /* C */
+            } else {
+                resultado = 1;  /* F */
+            }
+        }
+    }
+    
+    return resultado;
+}
+
+int calcularMedia(int notas[], int quantidade) {
+    int soma;
+    int i;
+    int media;
+    
+    soma = 0;
+    i = 0;
+    
+    while (i < quantidade) {
+        soma = soma + notas[i];
+        i = i + 1;
+    }
+    
+    media = soma / quantidade;
+    
+    return media;
+}
+
+int main(void) {
+    int notas[5];
+    int media;
+    int conceito;
+    
+    /* Inicializar notas */
+    notas[0] = 85;
+    notas[1] = 90;
+    notas[2] = 78;
+    notas[3] = 92;
+    notas[4] = 88;
+    
+    media = calcularMedia(notas, 5);
+    conceito = classificar(media);
+    
+    return conceito;
+}

@@ -1,0 +1,9 @@
+/* Erro: programa sem função main */
+int soma(int a, int b) {
+    return a + b;
+}
+
+int multiplica(int x, int y) {
+    return x * y;
+}
+/* ERRO: falta a função main */

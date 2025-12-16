@@ -1,0 +1,6 @@
+/* Erro: variável não é array */
+int main(void) {
+    int x;
+    x = 10;
+    return x[5];  /* ERRO: x não é array */
+}

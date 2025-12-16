@@ -1,0 +1,44 @@
+/* Teste 2: Múltiplas funções */
+
+int minimo(int a, int b) {
+    int resultado;
+    
+    if (a < b) {
+        resultado = a;
+    } else {
+        resultado = b;
+    }
+    
+    return resultado;
+}
+
+int maximo(int a, int b) {
+    int resultado;
+    
+    if (a > b) {
+        resultado = a;
+    } else {
+        resultado = b;
+    }
+    
+    return resultado;
+}
+
+int intervalo(int x, int min, int max) {
+    int temp;
+    
+    temp = maximo(x, min);
+    temp = minimo(temp, max);
+    
+    return temp;
+}
+
+int main(void) {
+    int valor;
+    int resultado;
+    
+    valor = 150;
+    resultado = intervalo(valor, 0, 100);
+    
+    return 0;
+}

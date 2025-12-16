@@ -1,0 +1,17 @@
+/* Teste 1: Programa simples de soma */
+
+int soma(int a, int b) {
+    return a + b;
+}
+
+int main(void) {
+    int x;
+    int y;
+    int resultado;
+    
+    x = 10;
+    y = 20;
+    resultado = soma(x, y);
+    
+    return resultado;
+}

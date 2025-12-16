@@ -1,0 +1,6 @@
+/* Erro: uso antes da declaração no mesmo escopo */
+int main(void) {
+    x = 10;  /* ERRO: x ainda não foi declarada */
+    int x;
+    return x;
+}

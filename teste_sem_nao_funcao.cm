@@ -1,0 +1,8 @@
+/* Erro: variável chamada como função */
+int main(void) {
+    int x;
+    int y;
+    x = 10;
+    y = x(5);  /* ERRO: x não é função */
+    return y;
+}

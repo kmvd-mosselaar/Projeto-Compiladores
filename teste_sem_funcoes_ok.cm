@@ -1,0 +1,15 @@
+/* Sucesso: declarações corretas */
+int soma(int a, int b) {
+    return a + b;
+}
+
+int dobro(int x) {
+    return x + x;
+}
+
+int main(void) {
+    int resultado;
+    resultado = soma(10, 20);
+    resultado = dobro(resultado);
+    return resultado;
+}

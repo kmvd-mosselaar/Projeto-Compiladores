@@ -1,0 +1,40 @@
+/* Teste 6: Recursão - Fibonacci */
+/* Nota: Este teste mostra a AST, mas recursão não funciona em C- puro */
+
+int fibonacci(int n) {
+    int resultado;
+    
+    if (n <= 1) {
+        resultado = n;
+    } else {
+        int a;
+        int b;
+        int i;
+        int temp;
+        
+        a = 0;
+        b = 1;
+        i = 2;
+        
+        while (i <= n) {
+            temp = a + b;
+            a = b;
+            b = temp;
+            i = i + 1;
+        }
+        
+        resultado = b;
+    }
+    
+    return resultado;
+}
+
+int main(void) {
+    int n;
+    int resultado;
+    
+    n = 10;
+    resultado = fibonacci(n);
+    
+    return resultado;
+}

@@ -1,0 +1,6 @@
+/* Erro: função não declarada */
+int main(void) {
+    int x;
+    x = calcular(10, 20);  /* ERRO: calcular não existe */
+    return x;
+}

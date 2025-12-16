@@ -1,0 +1,23 @@
+/* Erro: variável não declarada */
+int main(void) {
+    int x;
+    x = 10;
+    y = 20;  /* ERRO: y não foi declarada */
+    return x;
+}
+cat > teste_var_nao_declarada.cm << 'EOF'
+
+/* Erro: variável não declarada */
+
+int main(void) {
+
+    int x;
+
+    x = 10;
+
+    y = 20;  /* ERRO: y não foi declarada */
+
+    return x;
+
+}
+
