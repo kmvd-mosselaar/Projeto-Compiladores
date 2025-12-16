@@ -1,0 +1,32 @@
+/* Teste 7: Operações matemáticas variadas */
+
+int calcular(int a, int b, int c) {
+    int temp1;
+    int temp2;
+    int resultado;
+    
+    /* (a + b) * c - (a / b) */
+    temp1 = a + b;
+    temp1 = temp1 * c;
+    
+    temp2 = a / b;
+    
+    resultado = temp1 - temp2;
+    
+    return resultado;
+}
+
+int main(void) {
+    int x;
+    int y;
+    int z;
+    int res;
+    
+    x = 20;
+    y = 5;
+    z = 3;
+    
+    res = calcular(x, y, z);
+    
+    return res;
+}
