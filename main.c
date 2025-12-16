@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include "common.h"
 #include "symtab.h"
+#include "semantic.h"
+#include "codegen.h"
 
 extern int yyparse();
 extern FILE *yyin;
@@ -50,7 +53,7 @@ int main(int argc, char **argv)
     printf("Análise sintática concluída com sucesso!\n");
     printf("=================================================\n\n");
 
-    /* Construir tabela de símbolos */
+    /* Construir tabela de símbolos (sintática) */
     printf("Construindo tabela de símbolos...\n");
     SymbolTable *symtab = create_symbol_table();
     build_symbol_table(syntax_tree, symtab);
@@ -75,11 +78,53 @@ int main(int argc, char **argv)
         printf("Nenhuma árvore gerada.\n");
     }
 
+    /* ================= ANÁLISE SEMÂNTICA ================= */
+
+    printf("\n=================================================\n");
+    printf("ANÁLISE SEMÂNTICA\n");
+    printf("=================================================\n");
+    printf("Iniciando análise semântica...\n");
+
+    SemanticAnalyzer *analyzer = semantic_create();
+    int semantic_ok = semantic_analyze(analyzer, syntax_tree);
+
+    if (!semantic_ok)
+    {
+        fprintf(stderr, "\nCompilação abortada devido a erros semânticos.\n");
+
+        semantic_destroy(analyzer);
+        free_ast(syntax_tree);
+        free_symbol_table(symtab);
+        fclose(yyin);
+        return 1;
+    }
+
+    printf("\nAnálise semântica concluída com sucesso!\n");
+
+    /* ================= CÓDIGO INTERMEDIÁRIO ================= */
+
+    printf("\n=================================================\n");
+    printf("GERAÇÃO DE CÓDIGO INTERMEDIÁRIO\n");
+    printf("=================================================\n");
+    printf("Gerando código intermediário...\n");
+
+    CodeGenerator *codegen = codegen_create();
+    codegen_generate(codegen, syntax_tree);
+
+    printf("\n-------------------------------------------------\n");
+    printf("CÓDIGO INTERMEDIÁRIO GERADO\n");
+    printf("-------------------------------------------------\n");
+    codegen_print(codegen);
+
     printf("\n=================================================\n");
     printf("Compilação concluída!\n");
     printf("=================================================\n");
 
-    /* Limpar memória */
+    /* ================= LIMPEZA DE MEMÓRIA ================= */
+
+    codegen_destroy(codegen);
+    semantic_destroy(analyzer);
+
     if (syntax_tree)
     {
         free_ast(syntax_tree);

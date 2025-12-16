@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "common.h"
+#include "ast.h"
 
 extern int yylex();
 extern int line_num;
@@ -34,13 +35,13 @@ ASTNode *syntax_tree = NULL;
 
 /* Não-terminais */
 %type <node> program declaration_list declaration var_declaration fun_declaration
-%type <node> params param_list param compound_stmt local_declarations
-%type <node> statement_list statement expression_stmt selection_stmt
+%type <node> params param_list param compound_stmt
+%type <node> statement expression_stmt selection_stmt
 %type <node> iteration_stmt return_stmt expression var simple_expression
-%type <node> additive_expression term factor call args arg_list
+%type <node> additive_expression term factor call
 %type <dtype> type_specifier
 %type <optype> relop addop mulop
-%type <list> statement_list_builder local_declarations_list
+%type <list> statement_list_builder local_declarations_list args arg_list
 
 /* Precedência e associatividade */
 %right ASSIGN
@@ -132,10 +133,10 @@ param
     ;
 
 compound_stmt
-    : LBRACE local_declarations statement_list RBRACE
+    : LBRACE local_declarations_list statement_list_builder RBRACE
         {
-            NodeList *decl_list = (NodeList*)$2;
-            NodeList *stmt_list = (NodeList*)$3;
+            NodeList *decl_list = $2;
+            NodeList *stmt_list = $3;
             
             $$ = create_compound_stmt_node(
                 decl_list ? decl_list->nodes : NULL,
@@ -148,13 +149,36 @@ compound_stmt
             if (decl_list) { free(decl_list); }
             if (stmt_list) { free(stmt_list); }
         }
-    ;
-
-local_declarations
-    : local_declarations_list
-        { $$ = (ASTNode*)$1; }
-    | /* empty */
-        { $$ = NULL; }
+    | LBRACE local_declarations_list RBRACE
+        {
+            NodeList *decl_list = $2;
+            
+            $$ = create_compound_stmt_node(
+                decl_list ? decl_list->nodes : NULL,
+                decl_list ? decl_list->count : 0,
+                NULL, 0,
+                line_num
+            );
+            
+            if (decl_list) { free(decl_list); }
+        }
+    | LBRACE statement_list_builder RBRACE
+        {
+            NodeList *stmt_list = $2;
+            
+            $$ = create_compound_stmt_node(
+                NULL, 0,
+                stmt_list ? stmt_list->nodes : NULL,
+                stmt_list ? stmt_list->count : 0,
+                line_num
+            );
+            
+            if (stmt_list) { free(stmt_list); }
+        }
+    | LBRACE RBRACE
+        {
+            $$ = create_compound_stmt_node(NULL, 0, NULL, 0, line_num);
+        }
     ;
 
 local_declarations_list
@@ -170,13 +194,6 @@ local_declarations_list
             add_to_list(list, $1);
             $$ = list;
         }
-    ;
-
-statement_list
-    : statement_list_builder
-        { $$ = (ASTNode*)$1; }
-    | /* empty */
-        { $$ = NULL; }
     ;
 
 statement_list_builder
@@ -301,7 +318,7 @@ factor
 call
     : ID LPAREN args RPAREN
         {
-            NodeList *arg_list = (NodeList*)$3;
+            NodeList *arg_list = $3;
             $$ = create_call_node($1, 
                                   arg_list ? arg_list->nodes : NULL,
                                   arg_list ? arg_list->count : 0,
@@ -313,7 +330,7 @@ call
 
 args
     : arg_list
-        { $$ = (ASTNode*)$1; }
+        { $$ = $1; }
     | /* empty */
         { $$ = NULL; }
     ;
