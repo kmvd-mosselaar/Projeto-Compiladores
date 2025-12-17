@@ -118,10 +118,6 @@ int main(int argc, char **argv)
     /* ========================================
        IMPRESSÃO DA AST (OPCIONAL)
        ======================================== */
-    printf("\n=================================================\n");
-    printf("ARVORE SINTATICA ABSTRATA (AST)\n");
-    printf("=================================================\n\n");
-
     if (syntax_tree)
     {
         print_ast(syntax_tree, 0);

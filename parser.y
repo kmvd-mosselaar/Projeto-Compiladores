@@ -10,6 +10,7 @@ extern char* yytext;
 extern FILE* yyin;
 
 int yyerror(const char *msg);
+void syntax_error_detail(const char *msg, const char *token, int line);
 
 ASTNode *syntax_tree = NULL;
 %}
@@ -335,8 +336,131 @@ arg_list
 
 %%
 
+/* ========================================================
+   FUNÇÃO DE ERRO SINTÁTICO COM MENSAGENS DETALHADAS
+   ======================================================== */
+
+void syntax_error_detail(const char *msg, const char *token, int line) {
+    fprintf(stderr, "\n");
+    fprintf(stderr, "╔═══════════════════════════════════════════════════════════════\n");
+    fprintf(stderr, "║ ERRO SINTÁTICO\n");
+    fprintf(stderr, "╠═══════════════════════════════════════════════════════════════\n");
+    fprintf(stderr, "║ Linha: %d\n", line);
+    fprintf(stderr, "║ Mensagem: %s\n", msg);
+    fprintf(stderr, "║ Token encontrado: '%s'\n", token);
+    fprintf(stderr, "╠═══════════════════════════════════════════════════════════════\n");
+    fprintf(stderr, "║ Sugestões:\n");
+    
+    /* Análise contextual do token para sugestões específicas */
+    
+    /* Erros com ponto-e-vírgula */
+    if (strcmp(token, ";") == 0) {
+        fprintf(stderr, "║    - Verifique se não falta uma expressão antes do ';'\n");
+        fprintf(stderr, "║    - Exemplo correto: x = 10;\n");
+        fprintf(stderr, "║    - Exemplo incorreto: x = ;\n");
+    }
+    /* Erros com RETURN */
+    else if (strcmp(token, "return") == 0) {
+        fprintf(stderr, "║    - 'return' só pode aparecer dentro de funções\n");
+        fprintf(stderr, "║    - Verifique se está dentro do corpo de uma função\n");
+        fprintf(stderr, "║    - Pode estar faltando ';' antes do return\n");
+    }
+    /* Erros com ELSE */
+    else if (strcmp(token, "else") == 0) {
+        fprintf(stderr, "║    - 'else' deve vir após um comando 'if' completo\n");
+        fprintf(stderr, "║    - Verifique se o 'if' tem um statement válido\n");
+        fprintf(stderr, "║    - Sintaxe: if (cond) statement else statement\n");
+    }
+    /* Erros com fechamento de parênteses */
+    else if (strcmp(token, ")") == 0) {
+        fprintf(stderr, "║    - Verifique se os parênteses estão balanceados\n");
+        fprintf(stderr, "║    - Pode estar faltando '(' correspondente\n");
+        fprintf(stderr, "║    - Ou há ')' em excesso\n");
+    }
+    /* Erros com abertura de parênteses */
+    else if (strcmp(token, "(") == 0) {
+        fprintf(stderr, "║    - Parêntese '(' inesperado nesta posição\n");
+        fprintf(stderr, "║    - Verifique a sintaxe da expressão\n");
+    }
+    /* Erros com fechamento de chaves */
+    else if (strcmp(token, "}") == 0) {
+        fprintf(stderr, "║    - Verifique se as chaves estão balanceadas\n");
+        fprintf(stderr, "║    - Pode estar faltando '{' correspondente\n");
+        fprintf(stderr, "║    - Ou há '}' em excesso\n");
+        fprintf(stderr, "║    - Verifique se todos os comandos têm ';' no final\n");
+    }
+    /* Erros com abertura de chaves */
+    else if (strcmp(token, "{") == 0) {
+        fprintf(stderr, "║    - Chave '{' inesperada nesta posição\n");
+        fprintf(stderr, "║    - Blocos só podem aparecer após: funções, if, while\n");
+    }
+    /* Erros com fechamento de colchetes */
+    else if (strcmp(token, "]") == 0) {
+        fprintf(stderr, "║    - Verifique se os colchetes estão balanceados\n");
+        fprintf(stderr, "║    - Sintaxe de array: nome[expressão]\n");
+    }
+    /* Erros com vírgula */
+    else if (strcmp(token, ",") == 0) {
+        fprintf(stderr, "║    - Vírgula inesperada\n");
+        fprintf(stderr, "║    - Vírgulas são usadas para separar:\n");
+        fprintf(stderr, "║      • Parâmetros de função\n");
+        fprintf(stderr, "║      • Argumentos em chamadas de função\n");
+    }
+    /* Erros com operadores */
+    else if (strcmp(token, "+") == 0 || strcmp(token, "-") == 0 || 
+             strcmp(token, "*") == 0 || strcmp(token, "/") == 0) {
+        fprintf(stderr, "║    - Operador '%s' inesperado\n", token);
+        fprintf(stderr, "║    - Verifique se há operandos antes e depois\n");
+        fprintf(stderr, "║    - Exemplo correto: a %s b\n", token);
+    }
+    /* Erros com atribuição */
+    else if (strcmp(token, "=") == 0) {
+        fprintf(stderr, "║    - Verifique a sintaxe da atribuição\n");
+        fprintf(stderr, "║    - Formato correto: variavel = expressao;\n");
+        fprintf(stderr, "║    - Lembre-se: use '==' para comparação\n");
+    }
+    /* Erros com IF */
+    else if (strcmp(token, "if") == 0) {
+        fprintf(stderr, "║    - Sintaxe correta: if (expressao) statement\n");
+        fprintf(stderr, "║    - Verifique se não falta ';' antes do if\n");
+    }
+    /* Erros com WHILE */
+    else if (strcmp(token, "while") == 0) {
+        fprintf(stderr, "║    - Sintaxe correta: while (expressao) statement\n");
+        fprintf(stderr, "║    - Verifique se não falta ';' antes do while\n");
+    }
+    /* Erros com tipos */
+    else if (strcmp(token, "int") == 0 || strcmp(token, "void") == 0) {
+        fprintf(stderr, "║    - Tipo '%s' inesperado nesta posição\n", token);
+        fprintf(stderr, "║    - Declarações devem estar no início de blocos\n");
+        fprintf(stderr, "║    - Funções devem ter tipo de retorno\n");
+    }
+    /* Erros com identificadores */
+    else if (yytext && (yytext[0] >= 'a' && yytext[0] <= 'z') || 
+                       (yytext[0] >= 'A' && yytext[0] <= 'Z') ||
+                       (yytext[0] == '_')) {
+        fprintf(stderr, "║    - Identificador '%s' em posição inválida\n", token);
+        fprintf(stderr, "║    - Verifique se a declaração está correta\n");
+        fprintf(stderr, "║    - Pode estar faltando ';' no comando anterior\n");
+    }
+    /* Erros com números */
+    else if (yytext && yytext[0] >= '0' && yytext[0] <= '9') {
+        fprintf(stderr, "║    - Número '%s' em posição inválida\n", token);
+        fprintf(stderr, "║    - Verifique a sintaxe da expressão\n");
+    }
+    /* Erros genéricos */
+    else {
+        fprintf(stderr, "║    - Verifique:\n");
+        fprintf(stderr, "║      • Ponto-e-vírgula (;) ao final de comandos\n");
+        fprintf(stderr, "║      • Parênteses (), colchetes [] e chaves {} balanceados\n");
+        fprintf(stderr, "║      • Sintaxe de declarações e expressões\n");
+        fprintf(stderr, "║      • Uso correto de palavras-chave\n");
+    }
+    
+    fprintf(stderr, "╚═══════════════════════════════════════════════════════════════\n\n");
+}
+
 int yyerror(const char *msg) {
-    fprintf(stderr, "ERRO SINTATICO: token inesperado '%s' - LINHA: %d\n", 
-            yytext, line_num);
+    syntax_error_detail(msg, yytext, line_num);
     return 0;
 }

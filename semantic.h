@@ -6,7 +6,8 @@
 #include "symtab.h"
 
 /* Estrutura do Analisador Semântico */
-typedef struct {
+typedef struct
+{
     SymbolTable *symtab;
     int has_errors;
     char current_function[256];
@@ -14,7 +15,7 @@ typedef struct {
 } SemanticAnalyzer;
 
 /* Inicialização e finalização */
-SemanticAnalyzer* semantic_create(void);
+SemanticAnalyzer *semantic_create(void);
 void semantic_destroy(SemanticAnalyzer *analyzer);
 
 /* Função principal de análise */
