@@ -4,8 +4,7 @@
 #include "ast.h"
 
 /* Função auxiliar para criar um nó básico */
-static ASTNode *
-create_node(NodeType type, int line)
+static ASTNode *create_node(NodeType type, int line)
 {
     ASTNode *node = (ASTNode *)malloc(sizeof(ASTNode));
     if (!node)
@@ -180,62 +179,109 @@ char *get_type_string(DataType type)
     }
 }
 
-/* ========== IMPRESSÃO ESTILO PDF - ÁRVORE ABSTRATA ========== */
+/* ========== IMPRESSÃO VISUAL DA ÁRVORE - VERSÃO CORRIGIDA ========== */
 
-static void print_indent(int level)
+#define MAX_DEPTH 50
+static int prefix_stack[MAX_DEPTH];
+
+static void print_prefix(int level, int is_last)
 {
-    for (int i = 0; i < level; i++)
+    for (int i = 0; i < level - 1; i++)
     {
-        printf("  ");
+        if (prefix_stack[i])
+        {
+            printf("│   ");
+        }
+        else
+        {
+            printf("    ");
+        }
+    }
+
+    if (level > 0)
+    {
+        if (is_last)
+        {
+            printf("└── ");
+        }
+        else
+        {
+            printf("├── ");
+        }
     }
 }
 
-static void print_ast_abstract(ASTNode *node, int level)
+static void print_ast_node(ASTNode *node, int level, int is_last);
+
+static void print_ast_hierarchical(ASTNode *node, int level, int is_last)
 {
     if (!node)
         return;
 
-    print_indent(level);
+    /* Atualiza o stack de prefixos */
+    if (level > 0)
+    {
+        prefix_stack[level - 1] = !is_last;
+    }
+
+    print_prefix(level, is_last);
 
     switch (node->type)
     {
     case NODE_PROGRAM:
         printf("PROGRAM\n");
-        break;
+        /* Processa declarações como filhos */
+        if (node->sibling)
+        {
+            ASTNode *decl = node->sibling;
+            while (decl)
+            {
+                int is_last_decl = (decl->sibling == NULL);
+                print_ast_hierarchical(decl, level + 1, is_last_decl);
+                decl = decl->sibling;
+            }
+        }
+        return;
 
     case NODE_VAR_DECL:
-        printf("VAR_DECL: %s", node->data.var_decl.name);
+        printf("VAR: %s", node->data.var_decl.name);
         if (node->data.var_decl.is_array)
             printf("[%d]", node->data.var_decl.array_size);
         printf(" : %s\n", get_type_string(node->data.var_decl.data_type));
         break;
 
     case NODE_FUN_DECL:
-        printf("FUNCTION_DECL: %s\n", node->data.fun_decl.name);
+    {
+        printf("FUNCTION: %s\n", node->data.fun_decl.name);
 
-        if (node->data.fun_decl.params)
+        ASTNode *param = node->data.fun_decl.params;
+        int has_params = (param != NULL);
+        int has_body = (node->data.fun_decl.body != NULL);
+
+        if (has_params)
         {
-            print_indent(level);
-            printf("|\n");
-            print_indent(level);
-            printf("+-- PARAMS:\n");
-            ASTNode *p = node->data.fun_decl.params;
-            while (p)
+            prefix_stack[level] = has_body;
+            print_prefix(level + 1, !has_body);
+            printf("PARAMS\n");
+
+            while (param)
             {
-                print_ast_abstract(p, level + 2);
-                p = p->sibling;
+                prefix_stack[level] = has_body;
+                int is_last_param = (param->sibling == NULL);
+                print_ast_hierarchical(param, level + 2, is_last_param);
+                param = param->sibling;
             }
         }
 
-        if (node->data.fun_decl.body)
+        if (has_body)
         {
-            print_indent(level);
-            printf("|\n");
-            print_indent(level);
-            printf("+-- BODY:\n");
-            print_ast_abstract(node->data.fun_decl.body, level + 2);
+            prefix_stack[level] = 0;
+            print_prefix(level + 1, 1);
+            printf("BODY\n");
+            print_ast_hierarchical(node->data.fun_decl.body, level + 2, 1);
         }
         break;
+    }
 
     case NODE_PARAM:
         printf("PARAM: %s", node->data.param.name);
@@ -245,118 +291,119 @@ static void print_ast_abstract(ASTNode *node, int level)
         break;
 
     case NODE_COMPOUND_STMT:
-        printf("BLOCK { ... }\n");
+    {
+        printf("BLOCK\n");
 
-        if (node->data.compound.num_local_decls > 0)
+        int has_locals = (node->data.compound.num_local_decls > 0);
+        int has_stmts = (node->data.compound.num_statements > 0);
+
+        if (has_locals)
         {
-            print_indent(level);
-            printf("|\n");
-            print_indent(level);
-            printf("+-- LOCAL_DECLS:\n");
+            prefix_stack[level] = has_stmts;
+            print_prefix(level + 1, !has_stmts);
+            printf("LOCAL_VARS\n");
+
             for (int i = 0; i < node->data.compound.num_local_decls; i++)
-                print_ast_abstract(node->data.compound.local_decls[i], level + 2);
+            {
+                prefix_stack[level] = has_stmts;
+                int is_last = (i == node->data.compound.num_local_decls - 1);
+                print_ast_hierarchical(node->data.compound.local_decls[i], level + 2, is_last);
+            }
         }
 
-        if (node->data.compound.num_statements > 0)
+        if (has_stmts)
         {
-            print_indent(level);
-            printf("|\n");
-            print_indent(level);
-            printf("+-- STATEMENTS:\n");
+            prefix_stack[level] = 0;
+            print_prefix(level + 1, 1);
+            printf("STATEMENTS\n");
+
             for (int i = 0; i < node->data.compound.num_statements; i++)
-                print_ast_abstract(node->data.compound.statements[i], level + 2);
+            {
+                prefix_stack[level] = 0;
+                int is_last = (i == node->data.compound.num_statements - 1);
+                print_ast_hierarchical(node->data.compound.statements[i], level + 2, is_last);
+            }
         }
         break;
+    }
 
     case NODE_IF_STMT:
-        printf("IF_STATEMENT\n");
-        print_indent(level);
-        printf("|\n");
-        print_indent(level);
-        printf("+-- CONDITION:\n");
-        print_ast_abstract(node->data.if_stmt.condition, level + 2);
+        printf("IF\n");
+        prefix_stack[level] = 1;
+        print_prefix(level + 1, 0);
+        printf("CONDITION\n");
+        print_ast_hierarchical(node->data.if_stmt.condition, level + 2, 1);
 
-        print_indent(level);
-        printf("|\n");
-        print_indent(level);
-        printf("+-- THEN:\n");
-        print_ast_abstract(node->data.if_stmt.then_stmt, level + 2);
+        prefix_stack[level] = (node->data.if_stmt.else_stmt != NULL);
+        print_prefix(level + 1, !node->data.if_stmt.else_stmt);
+        printf("THEN\n");
+        print_ast_hierarchical(node->data.if_stmt.then_stmt, level + 2, 1);
 
         if (node->data.if_stmt.else_stmt)
         {
-            print_indent(level);
-            printf("|\n");
-            print_indent(level);
-            printf("+-- ELSE:\n");
-            print_ast_abstract(node->data.if_stmt.else_stmt, level + 2);
+            prefix_stack[level] = 0;
+            print_prefix(level + 1, 1);
+            printf("ELSE\n");
+            print_ast_hierarchical(node->data.if_stmt.else_stmt, level + 2, 1);
         }
         break;
 
     case NODE_WHILE_STMT:
-        printf("WHILE_STATEMENT\n");
-        print_indent(level);
-        printf("|\n");
-        print_indent(level);
-        printf("+-- CONDITION:\n");
-        print_ast_abstract(node->data.while_stmt.condition, level + 2);
+        printf("WHILE\n");
+        prefix_stack[level] = 1;
+        print_prefix(level + 1, 0);
+        printf("CONDITION\n");
+        print_ast_hierarchical(node->data.while_stmt.condition, level + 2, 1);
 
-        print_indent(level);
-        printf("|\n");
-        print_indent(level);
-        printf("+-- BODY:\n");
-        print_ast_abstract(node->data.while_stmt.body, level + 2);
+        prefix_stack[level] = 0;
+        print_prefix(level + 1, 1);
+        printf("BODY\n");
+        print_ast_hierarchical(node->data.while_stmt.body, level + 2, 1);
         break;
 
     case NODE_RETURN_STMT:
         printf("RETURN\n");
         if (node->data.return_stmt.expr)
         {
-            print_indent(level);
-            printf("|\n");
-            print_indent(level);
-            printf("+-- EXPR:\n");
-            print_ast_abstract(node->data.return_stmt.expr, level + 2);
+            print_ast_hierarchical(node->data.return_stmt.expr, level + 1, 1);
         }
         break;
 
     case NODE_ASSIGN:
         printf("ASSIGN (=)\n");
-        print_indent(level);
-        printf("|\n");
-        print_indent(level);
-        printf("+-- LEFT:\n");
-        print_ast_abstract(node->data.assign.var, level + 2);
-        print_indent(level);
-        printf("|\n");
-        print_indent(level);
-        printf("+-- RIGHT:\n");
-        print_ast_abstract(node->data.assign.expr, level + 2);
+        prefix_stack[level] = 1;
+        print_prefix(level + 1, 0);
+        printf("LEFT\n");
+        print_ast_hierarchical(node->data.assign.var, level + 2, 1);
+
+        prefix_stack[level] = 0;
+        print_prefix(level + 1, 1);
+        printf("RIGHT\n");
+        print_ast_hierarchical(node->data.assign.expr, level + 2, 1);
         break;
 
     case NODE_BINARY_OP:
-        printf("OPERATOR: %s\n", get_op_string(node->data.binary_op.op));
-        print_indent(level);
-        printf("|\n");
-        print_indent(level);
-        printf("+-- LEFT:\n");
-        print_ast_abstract(node->data.binary_op.left, level + 2);
-        print_indent(level);
-        printf("|\n");
-        print_indent(level);
-        printf("+-- RIGHT:\n");
-        print_ast_abstract(node->data.binary_op.right, level + 2);
+        printf("OP: %s\n", get_op_string(node->data.binary_op.op));
+        prefix_stack[level] = 1;
+        print_prefix(level + 1, 0);
+        printf("LEFT\n");
+        print_ast_hierarchical(node->data.binary_op.left, level + 2, 1);
+
+        prefix_stack[level] = 0;
+        print_prefix(level + 1, 1);
+        printf("RIGHT\n");
+        print_ast_hierarchical(node->data.binary_op.right, level + 2, 1);
         break;
 
     case NODE_VAR:
-        printf("VARIABLE: %s", node->data.var.name);
+        printf("VAR: %s", node->data.var.name);
         if (node->data.var.index)
         {
             printf("[]\n");
-            print_indent(level);
-            printf("|\n");
-            print_indent(level);
-            printf("+-- INDEX:\n");
-            print_ast_abstract(node->data.var.index, level + 2);
+            prefix_stack[level] = 0;
+            print_prefix(level + 1, 1);
+            printf("INDEX\n");
+            print_ast_hierarchical(node->data.var.index, level + 2, 1);
         }
         else
         {
@@ -365,42 +412,36 @@ static void print_ast_abstract(ASTNode *node, int level)
         break;
 
     case NODE_CALL:
-        printf("FUNCTION_CALL: %s()\n", node->data.call.name);
+        printf("CALL: %s()\n", node->data.call.name);
         if (node->data.call.num_args > 0)
         {
-            print_indent(level);
-            printf("|\n");
-            print_indent(level);
-            printf("+-- ARGUMENTS:\n");
+            prefix_stack[level] = 0;
+            print_prefix(level + 1, 1);
+            printf("ARGS\n");
+
             for (int i = 0; i < node->data.call.num_args; i++)
-                print_ast_abstract(node->data.call.args[i], level + 2);
+            {
+                prefix_stack[level] = 0;
+                int is_last = (i == node->data.call.num_args - 1);
+                print_ast_hierarchical(node->data.call.args[i], level + 2, is_last);
+            }
         }
         break;
 
     case NODE_CONST:
-        printf("CONSTANT: %d\n", node->data.const_val.value);
+        printf("CONST: %d\n", node->data.const_val.value);
         break;
 
     case NODE_EXPR_STMT:
-        printf("EXPRESSION_STMT\n");
+        printf("EXPR_STMT\n");
         if (node->data.expr_stmt.expr)
         {
-            print_indent(level);
-            printf("|\n");
-            print_indent(level);
-            printf("+-- EXPR:\n");
-            print_ast_abstract(node->data.expr_stmt.expr, level + 2);
+            print_ast_hierarchical(node->data.expr_stmt.expr, level + 1, 1);
         }
         break;
 
     default:
-        printf("UNKNOWN_NODE\n");
-    }
-
-    if (node->sibling)
-    {
-        printf("\n");
-        print_ast_abstract(node->sibling, level);
+        printf("UNKNOWN\n");
     }
 }
 
@@ -408,25 +449,27 @@ void print_ast(ASTNode *node, int indent)
 {
     (void)indent;
 
+    /* Inicializa o stack */
+    for (int i = 0; i < MAX_DEPTH; i++)
+    {
+        prefix_stack[i] = 0;
+    }
+
     printf("\n");
-    printf("==========================================================\n");
-    printf("ARVORE ABSTRATA DE SINTAXE (AST)\n");
-    printf("Representacao simplificada - Estrutura operacional\n");
-    printf("==========================================================\n\n");
+    printf("=================================================\n");
+    printf("ARVORE DE ANALISE SINTATICA (AST)\n");
+    printf("=================================================\n\n");
 
-    print_ast_abstract(node, 0);
+    if (node)
+    {
+        print_ast_hierarchical(node, 0, 1);
+    }
+    else
+    {
+        printf("(vazia)\n");
+    }
 
-    printf("\n==========================================================\n");
-    printf("Legenda:\n");
-    printf("  FUNCTION_DECL  : Declaracao de funcao\n");
-    printf("  VAR_DECL       : Declaracao de variavel\n");
-    printf("  BLOCK          : Bloco de comandos { ... }\n");
-    printf("  ASSIGN         : Atribuicao (=)\n");
-    printf("  OPERATOR       : Operador binario (+, -, *, /, <, etc)\n");
-    printf("  FUNCTION_CALL  : Chamada de funcao\n");
-    printf("  VARIABLE       : Uso de variavel\n");
-    printf("  CONSTANT       : Valor constante (numero)\n");
-    printf("==========================================================\n\n");
+    printf("\n=================================================\n\n");
 }
 
 /* Liberar memória da AST */
