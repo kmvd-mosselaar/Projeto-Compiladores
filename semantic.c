@@ -13,6 +13,7 @@ static void analyze_param(SemanticAnalyzer *a, ASTNode *node);
 static void analyze_compound_stmt(SemanticAnalyzer *a, ASTNode *node);
 static void analyze_statement(SemanticAnalyzer *a, ASTNode *node);
 static DataType analyze_expression(SemanticAnalyzer *a, ASTNode *node);
+static int check_return_exists(ASTNode *node);
 static void semantic_error(const char *msg, int lineno);
 
 /* Criação do analisador semântico */
@@ -139,6 +140,50 @@ static void analyze_var_decl(SemanticAnalyzer *a, ASTNode *node) {
                   node->line_num);
 }
 
+/* CORREÇÃO 2: Função auxiliar para verificar se existe return no corpo */
+static int check_return_exists(ASTNode *node) {
+    if (!node) return 0;
+    
+    /* Se é um return, encontrou */
+    if (node->type == NODE_RETURN_STMT) {
+        return 1;
+    }
+    
+    /* Se é compound statement, verifica todos os statements */
+    if (node->type == NODE_COMPOUND_STMT) {
+        for (int i = 0; i < node->data.compound.num_statements; i++) {
+            if (check_return_exists(node->data.compound.statements[i])) {
+                return 1;
+            }
+        }
+    }
+    
+    /* Se é if, verifica then e else */
+    if (node->type == NODE_IF_STMT) {
+        if (check_return_exists(node->data.if_stmt.then_stmt)) {
+            return 1;
+        }
+        if (node->data.if_stmt.else_stmt && 
+            check_return_exists(node->data.if_stmt.else_stmt)) {
+            return 1;
+        }
+    }
+    
+    /* Se é while, verifica corpo */
+    if (node->type == NODE_WHILE_STMT) {
+        if (check_return_exists(node->data.while_stmt.body)) {
+            return 1;
+        }
+    }
+    
+    /* Se é expression statement, não tem return */
+    if (node->type == NODE_EXPR_STMT) {
+        return 0;
+    }
+    
+    return 0;
+}
+
 /* Análise de declaração de função */
 static void analyze_fun_decl(SemanticAnalyzer *a, ASTNode *node) {
     strcpy(a->current_function, node->data.fun_decl.name);
@@ -176,6 +221,17 @@ static void analyze_fun_decl(SemanticAnalyzer *a, ASTNode *node) {
     /* Analisa corpo da função */
     if (node->data.fun_decl.body) {
         analyze_compound_stmt(a, node->data.fun_decl.body);
+        
+        /* CORREÇÃO 2: Verifica se função não-void tem return */
+        if (node->data.fun_decl.return_type != TYPE_VOID) {
+            if (!check_return_exists(node->data.fun_decl.body)) {
+                char msg[256];
+                snprintf(msg, 256, "funcao '%s' deve retornar um valor", 
+                         node->data.fun_decl.name);
+                semantic_error(msg, node->line_num);
+                a->has_errors = 1;
+            }
+        }
     }
     
     /* Sai do escopo */
@@ -288,6 +344,20 @@ static DataType analyze_expression(SemanticAnalyzer *a, ASTNode *node) {
     
     switch(node->type) {
         case NODE_ASSIGN: {
+            /* Verifica se está tentando atribuir a um array inteiro */
+            if (node->data.assign.var->type == NODE_VAR) {
+                Symbol *sym = lookup_symbol(a->symtab, node->data.assign.var->data.var.name);
+                if (sym && sym->is_array && !node->data.assign.var->data.var.index && 
+                    sym->kind == SYM_VARIABLE) {
+                    char msg[256];
+                    snprintf(msg, 256, "atribuicao invalida: '%s' e um array", 
+                             node->data.assign.var->data.var.name);
+                    semantic_error(msg, node->line_num);
+                    a->has_errors = 1;
+                    return TYPE_VOID;
+                }
+            }
+            
             DataType var_type = analyze_expression(a, node->data.assign.var);
             DataType expr_type = analyze_expression(a, node->data.assign.expr);
             
@@ -299,6 +369,30 @@ static DataType analyze_expression(SemanticAnalyzer *a, ASTNode *node) {
         }
         
         case NODE_BINARY_OP: {
+            /* Verifica se os operandos são variáveis e se são arrays usados incorretamente */
+            if (node->data.binary_op.left->type == NODE_VAR) {
+                Symbol *sym = lookup_symbol(a->symtab, node->data.binary_op.left->data.var.name);
+                if (sym && sym->is_array && !node->data.binary_op.left->data.var.index && 
+                    sym->kind == SYM_VARIABLE) {
+                    char msg[256];
+                    snprintf(msg, 256, "operacao invalida: '%s' e um array", 
+                             node->data.binary_op.left->data.var.name);
+                    semantic_error(msg, node->line_num);
+                    a->has_errors = 1;
+                }
+            }
+            if (node->data.binary_op.right->type == NODE_VAR) {
+                Symbol *sym = lookup_symbol(a->symtab, node->data.binary_op.right->data.var.name);
+                if (sym && sym->is_array && !node->data.binary_op.right->data.var.index && 
+                    sym->kind == SYM_VARIABLE) {
+                    char msg[256];
+                    snprintf(msg, 256, "operacao invalida: '%s' e um array", 
+                             node->data.binary_op.right->data.var.name);
+                    semantic_error(msg, node->line_num);
+                    a->has_errors = 1;
+                }
+            }
+            
             analyze_expression(a, node->data.binary_op.left);
             analyze_expression(a, node->data.binary_op.right);
             return TYPE_INT;
@@ -314,8 +408,9 @@ static DataType analyze_expression(SemanticAnalyzer *a, ASTNode *node) {
                 return TYPE_VOID;
             }
             
-            /* Se tem índice, verifica se é array */
+            /* CORREÇÃO 1: Verifica uso correto de arrays */
             if (node->data.var.index) {
+                /* Tem índice - verifica se é array */
                 if (!sym->is_array) {
                     char msg[256];
                     snprintf(msg, 256, "'%s' nao e um array", node->data.var.name);
@@ -323,15 +418,9 @@ static DataType analyze_expression(SemanticAnalyzer *a, ASTNode *node) {
                     a->has_errors = 1;
                 }
                 analyze_expression(a, node->data.var.index);
-            } else {
-                /* Variável simples não pode ser array sem índice */
-                if (sym->is_array && sym->kind == SYM_VARIABLE) {
-                    char msg[256];
-                    snprintf(msg, 256, "array '%s' usado sem indice", node->data.var.name);
-                    semantic_error(msg, node->line_num);
-                    a->has_errors = 1;
-                }
             }
+            /* Arrays podem ser usados sem índice como argumentos de função */
+            /* Não geramos erro aqui - o contexto determina se é válido */
             
             return sym->type;
         }
