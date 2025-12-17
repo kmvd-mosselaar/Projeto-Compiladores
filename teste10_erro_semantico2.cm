@@ -1,3 +1,4 @@
+/* Teste 10: funcao sem retorno *\
 int soma(int a, int b)
 {
     a = a + b;

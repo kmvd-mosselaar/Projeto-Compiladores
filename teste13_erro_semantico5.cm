@@ -1,3 +1,4 @@
+/* Teste 13: funcao nao declarada *\
 int main(void)
 {
     foo(10);

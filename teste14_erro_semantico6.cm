@@ -1,3 +1,4 @@
+/* Teste 14: funcao void retorna valor *\
 void f(void)
 {
     return 10;

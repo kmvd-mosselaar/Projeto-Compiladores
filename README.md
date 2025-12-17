@@ -40,6 +40,8 @@ compilador/
 ├── ast.h / ast.c      - Árvore Sintática Abstrata
 ├── symtab.h / symtab.c - Tabela de Símbolos
 ├── build_symtab.c     - Construtor da Tabela de Símbolos
+├── semantic.h / semantic.c - Analisador Semântico
+├── codegen.h / codegen.c - Gerador de Código Intermediário
 ├── common.h / common.c - Funções auxiliares
 ├── main.c             - Programa principal
 └── Makefile           - Script de compilação
@@ -59,7 +61,11 @@ Código Fonte (.cm)
         ↓
 [Tabela de Símbolos]
         ↓
-    Saída: AST + Símbolos
+[Análise Semântica]
+        ↓
+[Geração de Código]
+        ↓
+  Código Intermediário
 ```
 
 ## 5. Análise Léxica
@@ -200,16 +206,187 @@ soma                 | int      | funcao       | global          | -            
 resultado            | int      | variavel     | main            | -                | 10
 ```
 
-## 9. Compilação e Execução
+## 9. Análise Semântica
 
-### 9.1. Requisitos
+### 9.1. Descrição
+
+O analisador semântico realiza verificações de contexto sobre o programa que não podem ser expressas pela gramática livre de contexto. É implementado em `semantic.c/h` e opera sobre a AST construída pelo parser.
+
+### 9.2. Verificações Realizadas
+
+O analisador semântico verifica:
+
+#### 9.2.1. Declarações
+- Variáveis não podem ter tipo `void`
+- Parâmetros não podem ter tipo `void`
+- Identificadores não podem ser redeclarados no mesmo escopo
+- A função `main` deve existir no programa
+
+#### 9.2.2. Uso de Identificadores
+- Identificadores devem ser declarados antes do uso
+- Variáveis não podem ser usadas como funções
+- Funções não podem ser usadas como variáveis
+
+#### 9.2.3. Arrays
+- Acesso a array deve incluir índice (exceto quando passado como argumento)
+- Variáveis escalares não podem ser indexadas
+- Arrays não podem ser usados em operações sem índice
+
+#### 9.2.4. Funções
+- Funções com tipo de retorno não-void devem ter pelo menos um comando `return`
+- Funções `void` não podem retornar valor
+- Funções não-void devem retornar valor
+
+#### 9.2.5. Expressões
+- Operações aritméticas e relacionais devem operar sobre valores válidos
+- Atribuições devem respeitar compatibilidade de tipos
+
+### 9.3. Funções Built-in
+
+O compilador reconhece duas funções pré-definidas:
+
+- `input()`: Lê um valor inteiro da entrada padrão
+- `output(valor)`: Escreve um valor na saída padrão
+
+### 9.4. Tratamento de Erros
+
+Erros semânticos são reportados no formato:
+```
+ERRO SEMANTICO: descrição do erro - LINHA: n
+```
+
+Exemplos de erros detectados:
+```
+ERRO SEMANTICO: identificador 'x' nao declarado - LINHA: 5
+ERRO SEMANTICO: funcao 'calcula' deve retornar um valor - LINHA: 3
+ERRO SEMANTICO: array 'v' deve ser acessado com indice - LINHA: 12
+ERRO SEMANTICO: 'soma' nao e um array - LINHA: 8
+```
+
+## 10. Geração de Código Intermediário
+
+### 10.1. Descrição
+
+O gerador de código intermediário produz código em representação de três endereços a partir da AST validada. A implementação está em `codegen.c/h`.
+
+### 10.2. Formato do Código Intermediário
+
+O código gerado utiliza a seguinte notação:
+
+#### 10.2.1. Declarações
+```
+declare nome_variavel
+declare_array nome_array[tamanho]
+```
+
+#### 10.2.2. Funções
+```
+function nome_funcao:
+  param parametro1
+  param parametro2
+  [corpo da função]
+end_function nome_funcao
+```
+
+#### 10.2.3. Atribuições e Operações
+```
+variavel = expressao
+temporario = op1 operador op2
+temporario = array[indice]
+array[indice] = valor
+```
+
+#### 10.2.4. Estruturas de Controle
+
+**Comandos if-else:**
+```
+  if_false condicao goto L1
+  [then_stmt]
+  goto L2
+L1:
+  [else_stmt]
+L2:
+```
+
+**Comandos while:**
+```
+L1:
+  if_false condicao goto L2
+  [corpo do while]
+  goto L1
+L2:
+```
+
+#### 10.2.5. Chamadas de Função
+```
+push argumento1
+push argumento2
+temporario = call nome_funcao
+```
+
+#### 10.2.6. Comandos return
+```
+return valor
+return
+```
+
+#### 10.2.7. Funções Built-in
+```
+temporario = input
+output valor
+```
+
+### 10.3. Variáveis Temporárias e Labels
+
+O gerador utiliza:
+- Temporários: `t0`, `t1`, `t2`, ... para armazenar resultados intermediários
+- Labels: `L0`, `L1`, `L2`, ... para controle de fluxo
+
+### 10.4. Exemplo de Código Gerado
+
+Código C-:
+```c
+int fatorial(int n) {
+    int resultado;
+    if (n <= 1) {
+        resultado = 1;
+    } else {
+        resultado = n * fatorial(n - 1);
+    }
+    return resultado;
+}
+```
+
+Código intermediário gerado:
+```
+function fatorial:
+  param n
+  declare resultado
+  t0 = n <= 1
+  if_false t0 goto L0
+  resultado = 1
+  goto L1
+L0:
+  t1 = n - 1
+  push t1
+  t2 = call fatorial
+  t3 = n * t2
+  resultado = t3
+L1:
+  return resultado
+end_function fatorial
+```
+
+## 11. Compilação e Execução
+
+### 11.1. Requisitos
 
 - GCC (GNU Compiler Collection)
 - Flex 2.6 ou superior
 - Bison 3.0 ou superior
 - Make
 
-### 9.2. Instalação das Dependências
+### 11.2. Instalação das Dependências
 
 #### Linux (Ubuntu/Debian)
 ```bash
@@ -223,7 +400,7 @@ apk update
 apk add build-base flex bison gcc g++ make
 ```
 
-### 9.3. Compilação do Projeto
+### 11.3. Compilação do Projeto
 ```bash
 # Gerar código do Bison
 bison -d parser.y
@@ -232,27 +409,91 @@ bison -d parser.y
 flex scanner.l
 
 # Compilar todos os arquivos
-gcc -Wall -g -o cminusc lex.yy.c parser.tab.c ast.c common.c symtab.c build_symtab.c main.c
+gcc -Wall -g -o cminusc lex.yy.c parser.tab.c ast.c common.c symtab.c build_symtab.c semantic.c codegen.c main.c
 ```
 
-### 9.4. Teste
+### 11.4. Teste
 ```bash
 ./cminusc <arquivo_teste.cm>
 ```
 
 Onde `<arquivo.cm>` é o arquivo de código-fonte C-.
 
-### 9.5. Saída do Compilador
+### 11.5. Saída do Compilador
 
-O compilador produz três componentes na saída:
+O compilador produz os seguintes componentes na saída:
 
 1. **Cabeçalho**: Informações sobre o arquivo sendo compilado
-2. **Tabela de Símbolos**: Lista completa de identificadores
+2. **Tabela de Símbolos**: Lista completa de identificadores com seus atributos
 3. **AST**: Representação visual da estrutura do programa
+4. **Análise Semântica**: Mensagens de erro semântico (se houver)
+5. **Código Intermediário**: Código em representação de três endereços
 
-## 10. Estrutura do Código
+### 11.6. Exemplo de Execução Completa
 
-### 10.1. Modularização
+Arquivo `teste.cm`:
+```c
+int soma(int a, int b) {
+    return a + b;
+}
+
+int main(void) {
+    int x;
+    int y;
+    x = 5;
+    y = 3;
+    return soma(x, y);
+}
+```
+
+Saída:
+```
+========================================
+COMPILADOR C-
+Arquivo: teste.cm
+========================================
+
+========== TABELA DE SIMBOLOS ==========
+Nome                 | Tipo     | Categoria    | Escopo          | Info            | Linha
+--------------------------------------------------------------------------------------------
+soma                 | int      | funcao       | global          | -                | 1
+a                    | int      | parametro    | soma            | -                | 1
+b                    | int      | parametro    | soma            | -                | 1
+main                 | int      | funcao       | global          | -                | 5
+x                    | int      | variavel     | main            | -                | 6
+y                    | int      | variavel     | main            | -                | 7
+==========================================
+
+========== ARVORE SINTATICA ABSTRATA ==========
+[Visualização da AST]
+==========================================
+
+========== CODIGO INTERMEDIARIO ==========
+# Codigo Intermediario C-
+
+function soma:
+  param a
+  param b
+  t0 = a + b
+  return t0
+end_function soma
+
+function main:
+  declare x
+  declare y
+  x = 5
+  y = 3
+  push x
+  push y
+  t1 = call soma
+  return t1
+end_function main
+==========================================
+```
+
+## 12. Estrutura do Código
+
+### 12.1. Modularização
 
 O código é organizado em módulos independentes:
 
@@ -261,25 +502,74 @@ O código é organizado em módulos independentes:
 - **ast.c/h**: Implementação da AST
 - **symtab.c/h**: Implementação da tabela de símbolos
 - **build_symtab.c**: Construção da tabela a partir da AST
+- **semantic.c/h**: Análise semântica sobre a AST
+- **codegen.c/h**: Geração de código intermediário
 - **common.c/h**: Estruturas e funções auxiliares
 - **main.c**: Coordenação dos componentes
 
-### 10.2. Convenções de Código
+### 12.2. Convenções de Código
 
 - Nomes de funções em snake_case
 - Nomes de tipos em PascalCase
 - Constantes em UPPER_CASE
 - Indentação de 4 espaços
 
-## 11. Referências
+## 13. Testes Realizados
 
-### 11.1. Bibliografia
+### 13.1. Descrição dos Testes
+
+O compilador foi testado com diversos programas que cobrem diferentes aspectos da linguagem C-. Os testes foram divididos em duas categorias principais: **testes de funcionalidades corretas** e **testes de detecção de erros**.
+
+### 13.2. Testes de Funcionalidades
+
+Foram realizados testes para verificar o correto funcionamento das seguintes funcionalidades:
+
+- **Chamadas de função**: Programas com múltiplas funções e passagem de parâmetros
+- **Arrays**: Declaração, indexação e passagem como argumento para funções
+- **Estruturas de controle**: Comandos `if-else` e `while`, incluindo aninhamento
+- **Operações aritméticas**: Expressões complexas envolvendo múltiplas operações
+- **Operações relacionais**: Comparações em condicionais
+- **Variáveis locais**: Declaração e uso de variáveis em diferentes escopos
+- **Recursão e iteração**: Algoritmos como busca em array e cálculo de Fibonacci
+
+### 13.3. Testes de Detecção de Erros
+
+O compilador foi testado para garantir a correta detecção dos seguintes erros:
+
+#### 13.3.1. Erros Léxicos
+- Caracteres inválidos no código fonte
+
+#### 13.3.2. Erros Sintáticos
+- Falta de ponto-e-vírgula
+- Estruturas gramaticais malformadas
+
+#### 13.3.3. Erros Semânticos
+- Uso de variáveis não declaradas
+- Funções sem comando `return` quando obrigatório
+- Declaração de variáveis com tipo `void`
+- Uso de arrays sem índice em contextos inválidos
+- Chamada de funções não declaradas
+- Funções `void` retornando valores
+- Redeclaração de identificadores no mesmo escopo
+
+### 13.4. Resultados
+
+Todos os testes foram executados com sucesso:
+
+- Programas corretos geraram AST, tabela de símbolos e código intermediário sem erros
+- Programas com erros foram corretamente rejeitados com mensagens apropriadas
+- O sistema de escopos funcionou corretamente em todos os cenários testados
+- A geração de código intermediário produziu representações corretas para todas as construções da linguagem
+
+## 14. Referências
+
+### 14.1. Bibliografia
 
 LOUDEN, Kenneth C. **Compiler Construction: Principles and Practice**. Boston: PWS Publishing Company, 1997. 707 p.
 
 AHO, Alfred V.; LAM, Monica S.; SETHI, Ravi; ULLMAN, Jeffrey D. **Compilers: Principles, Techniques, and Tools**. 2. ed. Boston: Addison-Wesley, 2006.
 
-### 11.2. Ferramentas
+### 14.2. Ferramentas
 
 - Flex: The Fast Lexical Analyzer. Disponível em: https://github.com/westes/flex
 - GNU Bison: The YACC-compatible Parser Generator. Disponível em: https://www.gnu.org/software/bison/

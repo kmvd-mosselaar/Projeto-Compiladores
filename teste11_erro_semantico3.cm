@@ -1,3 +1,4 @@
+/* Teste 11: variavel declarada como void *\
 int main(void)
 {
     void x;
